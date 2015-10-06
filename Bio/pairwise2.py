@@ -154,41 +154,31 @@ type help(pairwise2.align.localds) at the Python prompt.
 #   Only recover one alignment.
 
 from __future__ import print_function
+import numpy as np
 
 __docformat__ = "restructuredtext en"
 
 MAX_ALIGNMENTS = 1000   # maximum alignments recovered in traceback
-
-class TraceMatrixList(object):
-    def __init__(self, rows, cols):
-        self.trace_matrix = []
-        for i in range(rows):
-            self.trace_matrix.append([[None]] * cols)
-
-    def set(self, row, col, best_indexes):
-        self.trace_matrix[row][col] = best_indexes
-
-    def finalize_row(self):
-        pass
-
-    def get(self, row, col):
-        return self.trace_matrix[row][col]
 
 class TraceMatrixNumpy(object):
     def __init__(self, num_rows, num_cols):
         self.trace_matrix = []
         self.rows = {}
         self.lookup = np.zeros((num_rows,num_cols), dtype='uint32,uint16')
-        self.trace_idx_len = None
-        self.raw_data = None
-        self.cur_row = None
+        self.trace_idx_len = []
+        self.trace_idx = 0
+        self.raw_data = []
+        self.cur_row = -1
 
     def set(self, row, col, best_indexes):
-        if row != self.cur_row:
-            self.finalize_row()
-            self.cur_data = []
+        #if row != self.cur_row:
+        #    #import pdb; pdb.set_trace()
+        #    self.finalize_row()
         self.cur_row = row
-        self.cur_data.append(
+        trace_len = len(best_indexes)
+        self.trace_idx_len.append((self.trace_idx, trace_len))
+        self.trace_idx += trace_len
+        self.raw_data.extend(best_indexes)
 
     def get(self, row, col):
         col_idx, col_len = self.lookup[row, col]
@@ -197,16 +187,22 @@ class TraceMatrixNumpy(object):
             result.append(None)
         else:
             for i in range(col_len):
-                val = self.rows[r][col_idx + i]
+                val = self.rows[row][col_idx + i]
                 if val[0] == -1:
                     val = None
                 result.append(val)
         return result
 
     def finalize_row(self):
-        self.rows[row_num] = np.empty((target), dtype='int16,int16')
-        self.lookup[row_num][1:] = trace_idx_len
-        self.rows[row_num][:target] = raw_data
+        if self.cur_row != -1:
+            size = len(self.raw_data)
+            row_num = self.cur_row
+            self.rows[row_num] = np.empty((size), dtype='int16,int16')
+            self.lookup[row_num][1:] = self.trace_idx_len
+            self.rows[row_num][:size] = self.raw_data
+        self.trace_idx = 0
+        self.trace_idx_len = []
+        self.raw_data = []
 
 class align(object):
     """This class provides functions that do alignments."""
