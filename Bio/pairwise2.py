@@ -159,6 +159,54 @@ __docformat__ = "restructuredtext en"
 
 MAX_ALIGNMENTS = 1000   # maximum alignments recovered in traceback
 
+class TraceMatrixList(object):
+    def __init__(self, rows, cols):
+        self.trace_matrix = []
+        for i in range(rows):
+            self.trace_matrix.append([[None]] * cols)
+
+    def set(self, row, col, best_indexes):
+        self.trace_matrix[row][col] = best_indexes
+
+    def finalize_row(self):
+        pass
+
+    def get(self, row, col):
+        return self.trace_matrix[row][col]
+
+class TraceMatrixNumpy(object):
+    def __init__(self, num_rows, num_cols):
+        self.trace_matrix = []
+        self.rows = {}
+        self.lookup = np.zeros((num_rows,num_cols), dtype='uint32,uint16')
+        self.trace_idx_len = None
+        self.raw_data = None
+        self.cur_row = None
+
+    def set(self, row, col, best_indexes):
+        if row != self.cur_row:
+            self.finalize_row()
+            self.cur_data = []
+        self.cur_row = row
+        self.cur_data.append(
+
+    def get(self, row, col):
+        col_idx, col_len = self.lookup[row, col]
+        result = []
+        if col_len == 0:
+            result.append(None)
+        else:
+            for i in range(col_len):
+                val = self.rows[r][col_idx + i]
+                if val[0] == -1:
+                    val = None
+                result.append(val)
+        return result
+
+    def finalize_row(self):
+        self.rows[row_num] = np.empty((target), dtype='int16,int16')
+        self.lookup[row_num][1:] = trace_idx_len
+        self.rows[row_num][:target] = raw_data
 
 class align(object):
     """This class provides functions that do alignments."""
@@ -384,10 +432,10 @@ def _make_score_matrix_generic(
     # shape:
     # sequenceA (down) x sequenceB (across)
     lenA, lenB = len(sequenceA), len(sequenceB)
-    score_matrix, trace_matrix = [], []
+    trace_matrix = TraceMatrixNumpy(lenA, lenB)
+    score_matrix = []
     for i in range(lenA):
         score_matrix.append([None] * lenB)
-        trace_matrix.append([[None]] * lenB)
 
     # The top and left borders of the matrices are special cases
     # because there are no previously aligned characters.  To simplify
@@ -451,7 +499,8 @@ def _make_score_matrix_generic(
                                      match_fn(sequenceA[row], sequenceB[col])
             if not align_globally and score_matrix[row][col] < 0:
                 score_matrix[row][col] = 0
-            trace_matrix[row][col] = best_indexes
+            trace_matrix.set(row, col, best_indexes)
+        trace_matrix.finalize_row()
     return score_matrix, trace_matrix
 
 
@@ -468,10 +517,10 @@ def _make_score_matrix_fast(
     # shape:
     # sequenceA (down) x sequenceB (across)
     lenA, lenB = len(sequenceA), len(sequenceB)
-    score_matrix, trace_matrix = [], []
+    score_matrix = []
+    trace_matrix = TraceMatrixNumpy(lenA, lenB)
     for i in range(lenA):
         score_matrix.append([None] * lenB)
-        trace_matrix.append([[None]] * lenB)
 
     # The top and left borders of the matrices are special cases
     # because there are no previously aligned characters.  To simplify
@@ -553,7 +602,7 @@ def _make_score_matrix_fast(
                 score_matrix[row][col] = 0
             else:
                 score_matrix[row][col] = score
-            trace_matrix[row][col] = best_index
+            trace_matrix.set(row, col, best_index)
 
             # Update the cached column scores.  The best score for
             # this can come from either extending the gap in the
@@ -590,6 +639,11 @@ def _make_score_matrix_fast(
                 if (row - 1, col - 1) not in row_cache_index[row - 1]:
                     row_cache_index[row - 1] = row_cache_index[row - 1] + \
                                              [(row - 1, col - 1)]
+
+        #free up memory for no longer used row_cache_index
+        if row > 0:
+            row_cache_index[row - 1] = None
+        trace_matrix.finalize_row()
 
     return score_matrix, trace_matrix
 
@@ -661,7 +715,7 @@ def _recover_alignments(sequenceA, sequenceB, starts,
                 in_process.append(
                     (seqA, seqB, score, begin, end, prev_pos, None))
             else:
-                for next_pos in trace_matrix[nextA][nextB]:
+                for next_pos in trace_matrix.get(nextA, nextB):
                     in_process.append(
                         (seqA, seqB, score, begin, end, prev_pos, next_pos))
                     if one_alignment_only:
